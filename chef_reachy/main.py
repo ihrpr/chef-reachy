@@ -1,9 +1,10 @@
 import threading
+import time
+
+import numpy as np
+from pydantic import BaseModel
 from reachy_mini import ReachyMini, ReachyMiniApp
 from reachy_mini.utils import create_head_pose
-import numpy as np
-import time
-from pydantic import BaseModel
 
 
 class ChefReachy(ReachyMiniApp):
@@ -19,8 +20,11 @@ class ChefReachy(ReachyMiniApp):
         antennas_enabled = True
         sound_play_requested = False
 
-        # You can ignore this part if you don't want to add settings to your app. If you set custom_app_url to None, you have to remove this part as well.
-        # === vvv ===
+        # You can ignore this part if you don't want to add settings to your app.
+        # If you set custom_app_url to None, you have to remove this part as well.
+        # === vvv ===
+        assert self.settings_app is not None, "settings_app must be available when custom_app_url is set"
+
         class AntennaState(BaseModel):
             enabled: bool
 
@@ -34,7 +38,7 @@ class ChefReachy(ReachyMiniApp):
         def request_sound_play():
             nonlocal sound_play_requested
             sound_play_requested = True
-            
+
         # === ^^^ ===
 
         # Main control loop
