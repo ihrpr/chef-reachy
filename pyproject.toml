@@ -8,8 +8,8 @@ name = "chef_reachy"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
-dependencies = ["reachy-mini"]
+requires-python = ">=3.12"
+dependencies = ["reachy-mini[gstreamer]>=1.2.4"]
 keywords = ["reachy-mini-app"]
 
 [project.entry-points."reachy_mini_apps"]
