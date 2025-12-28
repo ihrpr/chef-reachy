@@ -3,25 +3,189 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Reachy Mini example app template</title>
+    <title>Chef Reachy - Food Vision</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        .status-indicator {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+
+        .status-indicator.success {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+
+        .status-indicator.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+
+        .status-indicator.processing {
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover:not(:disabled) {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: #2196F3;
+        }
+
+        button.secondary:hover:not(:disabled) {
+            background: #1976D2;
+        }
+
+        button.danger {
+            background: #f44336;
+        }
+
+        button.danger:hover:not(:disabled) {
+            background: #d32f2f;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        #vision-results {
+            margin-top: 20px;
+        }
+
+        #result-text {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            min-height: 50px;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        #result-timestamp {
+            color: #666;
+            font-size: 12px;
+            display: block;
+            margin-top: 10px;
+        }
+
+        .processing-indicator {
+            display: none;
+            padding: 15px;
+            margin: 10px 0;
+            background: #fff3e0;
+            border-radius: 4px;
+            border-left: 4px solid #ff9800;
+            font-weight: bold;
+        }
+
+        .processing-indicator.active {
+            display: block;
+        }
+
+        label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 10px 0;
+        }
+    </style>
 </head>
 
 <body>
-    <h1>Reachy Mini – Control Panel</h1>
+    <h1>Chef Reachy - Food Vision Control Panel</h1>
 
-    <div id="controls">
-        <label style="display:flex; align-items:center; gap:8px;">
-            <input type="checkbox" id="antenna-checkbox" checked>
-            Antennas
-        </label>
+    <!-- Vision Controls Section -->
+    <div class="section" id="vision-controls">
+        <h2>Food Vision</h2>
 
-        <button id="sound-btn">Play Sound</button>
+        <!-- Status indicator -->
+        <div id="vision-status" class="status-indicator">
+            Ready
+        </div>
+
+        <!-- Control buttons -->
+        <div>
+            <button id="capture-btn">Capture & Identify Food</button>
+        </div>
+
+        <!-- Custom prompt input -->
+        <div id="prompt-section">
+            <label for="custom-prompt">Custom Prompt (optional):</label>
+            <input type="text" id="custom-prompt"
+                   placeholder="Identify the food items in this image. List what you see.">
+        </div>
+
+        <!-- Processing indicator -->
+        <div id="processing-indicator" class="processing-indicator">
+            Processing image... Please wait.
+        </div>
+
+        <!-- Captured image display -->
+        <div id="image-container" style="display: none; margin: 20px 0;">
+            <h3>Captured Image:</h3>
+            <img id="captured-image" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+        </div>
+
+        <!-- Results display -->
+        <div id="vision-results">
+            <h3>Latest Identification:</h3>
+            <div id="result-text">No results yet. Click "Capture & Identify Food" to start.</div>
+            <small id="result-timestamp"></small>
+        </div>
     </div>
 
-    <div id="status">Antennas status: running</div>
-    <script src="/static/main.js"></script>
+    <script src="/static/main.js?v=6"></script>
 </body>
 
 </html>

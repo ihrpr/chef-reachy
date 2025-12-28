@@ -6,11 +6,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "chef_reachy"
 version = "0.1.0"
-description = "Add your description here"
+description = "Chef Reachy - Food identification using SmolVLM2 vision model"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["reachy-mini[gstreamer]>=1.2.4"]
-keywords = ["reachy-mini-app"]
+dependencies = [
+    "reachy-mini[gstreamer]>=1.2.4",
+    "transformers>=4.57.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "accelerate>=0.20.0",
+    "opencv-python>=4.8.0",
+    "huggingface-hub>=0.20.0",
+    "numpy>=1.24.0",
+    "python-dotenv>=1.0.0",
+    "pillow>=10.0.0",
+    "num2words>=0.5.0",
+]
+keywords = ["reachy-mini-app", "vision", "food-recognition"]
 
 [project.entry-points."reachy_mini_apps"]
 chef_reachy = "chef_reachy.main:ChefReachy"

@@ -1,47 +1,92 @@
-let antennasEnabled = true;
+console.log("Chef Reachy UI v6 loaded");
 
-async function updateAntennasState(enabled) {
+// Vision state
+let isProcessing = false;
+
+async function captureAndProcess() {
+    if (isProcessing) return;
+
+    const statusEl = document.getElementById("vision-status");
+    const resultText = document.getElementById("result-text");
+    const resultTimestamp = document.getElementById("result-timestamp");
+    const processingIndicator = document.getElementById("processing-indicator");
+    const imageContainer = document.getElementById("image-container");
+    const capturedImage = document.getElementById("captured-image");
+    const captureBtn = document.getElementById("capture-btn");
+
+    isProcessing = true;
+    captureBtn.disabled = true;
+
     try {
-        const resp = await fetch("/antennas", {
+        // Show processing state
+        processingIndicator.classList.add("active");
+        statusEl.textContent = "Processing image...";
+        statusEl.className = "status-indicator processing";
+
+        const prompt = document.getElementById("custom-prompt").value.trim();
+        const body = prompt ? JSON.stringify({ prompt }) : JSON.stringify({});
+
+        const resp = await fetch("/vision/capture_and_process", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ enabled }),
+            body: body,
         });
+
         const data = await resp.json();
-        antennasEnabled = data.antennas_enabled;
-        updateUI();
+
+        if (data.status === "success") {
+            // Display the captured image
+            if (data.image) {
+                capturedImage.src = `data:image/jpeg;base64,${data.image}`;
+                imageContainer.style.display = "block";
+            }
+
+            // Display the description
+            resultText.textContent = data.description;
+            resultTimestamp.textContent = `Captured at: ${new Date(data.timestamp).toLocaleString()}`;
+            statusEl.textContent = "Processing complete!";
+            statusEl.className = "status-indicator success";
+            console.log("Vision result:", data.description);
+
+            // Reset status after a few seconds
+            setTimeout(() => {
+                statusEl.textContent = "Ready";
+                statusEl.className = "status-indicator success";
+            }, 3000);
+        } else if (data.status === "busy") {
+            statusEl.textContent = "Already processing, please wait...";
+            statusEl.className = "status-indicator processing";
+        } else {
+            resultText.textContent = `Error: ${data.message || "Unknown error"}`;
+            resultTimestamp.textContent = "";
+            statusEl.textContent = "Processing failed";
+            statusEl.className = "status-indicator error";
+        }
     } catch (e) {
-        document.getElementById("status").textContent = "Backend error";
+        console.error("Vision processing failed:", e);
+        resultText.textContent = `Error: ${e.message}`;
+        resultTimestamp.textContent = "";
+        statusEl.textContent = "Connection error";
+        statusEl.className = "status-indicator error";
+    } finally {
+        isProcessing = false;
+        processingIndicator.classList.remove("active");
+        captureBtn.disabled = false;
     }
 }
 
-async function playSound() {
-    try {
-        await fetch("/play_sound", { method: "POST" });
-    } catch (e) {
-        console.error("Error triggering sound:", e);
-    }
-}
-
-function updateUI() {
-    const checkbox = document.getElementById("antenna-checkbox");
-    const status = document.getElementById("status");
-
-    checkbox.checked = antennasEnabled;
-
-    if (antennasEnabled) {
-        status.textContent = "Antennas status: running";
-    } else {
-        status.textContent = "Antennas status: stopped";
-    }
-}
-
-document.getElementById("antenna-checkbox").addEventListener("change", (e) => {
-    updateAntennasState(e.target.checked);
+// Event listener for capture button
+document.getElementById("capture-btn").addEventListener("click", () => {
+    captureAndProcess();
 });
 
-document.getElementById("sound-btn").addEventListener("click", () => {
-    playSound();
+// Allow Enter key in prompt input to trigger capture
+document.getElementById("custom-prompt").addEventListener("keypress", (e) => {
+    if (e.key === "Enter" && !isProcessing) {
+        captureAndProcess();
+    }
 });
 
-updateUI();
+// Set initial status
+document.getElementById("vision-status").textContent = "Ready";
+document.getElementById("vision-status").className = "status-indicator success";
