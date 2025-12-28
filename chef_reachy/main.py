@@ -1,14 +1,19 @@
+import asyncio
 import logging
 import threading
 import time
 from datetime import datetime
 
-import numpy as np
-from pydantic import BaseModel
+from fastapi import WebSocket, WebSocketDisconnect
 from reachy_mini import ReachyMini, ReachyMiniApp
-from reachy_mini.utils import create_head_pose
 
-from chef_reachy.vision import CameraCapture, VisionConfig, VisionProcessor
+from chef_reachy.vision import (
+    CameraCapture,
+    OwlVitDetector,
+    VisionConfig,
+    draw_bboxes,
+    encode_image_base64,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,49 +34,75 @@ class ChefReachy(ReachyMiniApp):
         os.makedirs(cache_dir, exist_ok=True)
         os.environ["HF_HOME"] = cache_dir
 
-        # Initialize vision model BEFORE server starts
+        # Initialize OWL-ViT detector BEFORE server starts
         logger.info("=" * 60)
-        logger.info("INITIALIZING VISION MODEL")
+        logger.info("INITIALIZING OWL-ViT DETECTOR")
         logger.info("=" * 60)
-        logger.info("This will download ~5GB on first run and may take 10-30 seconds...")
+        logger.info("This will download ~600MB on first run and may take 10-30 seconds...")
 
-        self.vision_processor: VisionProcessor | None = None
-        self.vision_ready = False
-        self.vision_error: str | None = None
+        self.detector: OwlVitDetector | None = None
+        self.detector_ready = False
+        self.detector_error: str | None = None
 
         try:
             vision_config = VisionConfig()
             logger.info(f"Model: {vision_config.model_path}")
             logger.info(f"Device: {vision_config.device_preference}")
             logger.info(f"Cache: {vision_config.cache_dir}")
+            logger.info(f"Detection threshold: {vision_config.detection_threshold}")
+            logger.info(f"Food labels: {', '.join(vision_config.food_labels)}")
 
-            self.vision_processor = VisionProcessor(vision_config)
+            self.detector = OwlVitDetector(vision_config)
 
-            if self.vision_processor.initialize():
-                model_info = self.vision_processor.get_model_info()
+            if self.detector.initialize():
+                model_info = self.detector.get_model_info()
                 device = model_info.get("device", "unknown")
                 logger.info("=" * 60)
-                logger.info(f"✓ VISION MODEL READY ON {device.upper()}!")
+                logger.info(f"✓ OWL-ViT DETECTOR READY ON {device.upper()}!")
                 logger.info("=" * 60)
-                self.vision_ready = True
+                self.detector_ready = True
             else:
-                self.vision_error = "Failed to initialize vision model"
+                self.detector_error = "Failed to initialize OWL-ViT detector"
                 logger.error("=" * 60)
-                logger.error("✗ VISION INITIALIZATION FAILED")
+                logger.error("✗ DETECTOR INITIALIZATION FAILED")
                 logger.error("=" * 60)
         except Exception as e:
-            self.vision_error = str(e)
+            self.detector_error = str(e)
             logger.error("=" * 60)
-            logger.error(f"✗ VISION ERROR: {e}")
+            logger.error(f"✗ DETECTOR ERROR: {e}")
             logger.error("=" * 60)
-            logger.error("App will continue without vision capabilities")
+            logger.error("App will continue without detection capabilities")
 
     def run(self, reachy_mini: ReachyMini, stop_event: threading.Event):
         # Vision state
         camera_capture: CameraCapture | None = None
-        last_image_description = ""
-        last_image_base64 = ""
-        is_processing = False
+
+        # WebSocket connections for real-time streaming
+        active_websockets: list[WebSocket] = []
+        event_loop: asyncio.AbstractEventLoop | None = None
+
+        def broadcast_to_websockets(message: dict):
+            """Send message to all connected WebSocket clients (thread-safe)."""
+            if not active_websockets or event_loop is None:
+                return
+
+            async def send_to_all():
+                for ws in active_websockets[:]:
+                    try:
+                        await ws.send_json(message)
+                    except Exception as e:
+                        logger.warning(f"Failed to send to WebSocket: {e}")
+                        if ws in active_websockets:
+                            active_websockets.remove(ws)
+
+            try:
+                asyncio.run_coroutine_threadsafe(send_to_all(), event_loop)
+            except Exception as e:
+                logger.error(f"Failed to schedule broadcast: {e}")
+
+        # Camera tracking state
+        tracking_enabled = self.detector.vision_config.enable_tracking if self.detector else True
+        last_detection_update = time.time()
 
         # Initialize camera capture
         logger.info("Initializing camera capture...")
@@ -81,94 +112,135 @@ class ChefReachy(ReachyMiniApp):
         except Exception as e:
             logger.error(f"Failed to initialize camera capture: {e}")
 
-        # You can ignore this part if you don't want to add settings to your app.
-        # If you set custom_app_url to None, you have to remove this part as well.
-        # === vvv ===
         assert self.settings_app is not None, "settings_app must be available when custom_app_url is set"
 
-        class ProcessRequest(BaseModel):
-            prompt: str | None = None
+        @self.settings_app.websocket("/vision/stream")
+        async def websocket_stream(websocket: WebSocket):
+            """WebSocket endpoint for real-time detection streaming."""
+            nonlocal event_loop
 
-        @self.settings_app.post("/vision/capture_and_process")
-        def capture_and_process(request: ProcessRequest):
-            """Capture frame and process with vision model."""
-            nonlocal is_processing, last_image_description, last_image_base64
+            await websocket.accept()
+            active_websockets.append(websocket)
 
-            if is_processing:
-                return {
-                    "status": "busy",
-                    "message": "Processing already in progress",
-                }
+            if event_loop is None:
+                event_loop = asyncio.get_running_loop()
+                logger.info("Event loop captured for WebSocket broadcasting")
 
-            if not self.vision_ready or self.vision_processor is None:
-                return {
+            logger.info(f"WebSocket client connected. Active connections: {len(active_websockets)}")
+
+            if self.detector_ready:
+                await websocket.send_json({
+                    "status": "connected",
+                    "message": "Live stream connected - detection running",
+                    "timestamp": datetime.now().isoformat(),
+                })
+            else:
+                await websocket.send_json({
                     "status": "error",
-                    "message": self.vision_error or "Vision model not initialized",
-                }
-
-            if camera_capture is None:
-                return {
-                    "status": "error",
-                    "message": "Camera not available",
-                }
-
-            is_processing = True
+                    "message": f"Detector not ready: {self.detector_error}",
+                    "timestamp": datetime.now().isoformat(),
+                })
 
             try:
-                # Capture frame
-                logger.info("Capturing frame...")
-                frame = camera_capture.capture_frame()
-
-                if frame is None:
-                    is_processing = False
-                    return {
-                        "status": "error",
-                        "message": "Failed to capture frame from camera",
-                    }
-
-                # Convert frame to base64 for UI display
-                import base64
-                import cv2
-
-                success, jpeg_buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                if success:
-                    last_image_base64 = base64.b64encode(jpeg_buffer.tobytes()).decode("utf-8")
-                else:
-                    last_image_base64 = ""
-
-                # Process with vision model
-                logger.info("Processing image with vision model...")
-                prompt = request.prompt if request.prompt else None
-                description = self.vision_processor.process_image(frame, prompt)
-
-                last_image_description = description
-                timestamp = datetime.now().isoformat()
-
-                logger.info(f"Vision result: {description}")
-
-                is_processing = False
-                return {
-                    "status": "success",
-                    "description": description,
-                    "image": last_image_base64,
-                    "timestamp": timestamp,
-                }
-
+                while True:
+                    try:
+                        await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        pass
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected")
             except Exception as e:
-                logger.error(f"Vision processing error: {e}")
-                is_processing = False
-                return {
-                    "status": "error",
-                    "message": str(e),
-                }
+                logger.error(f"WebSocket error: {e}")
+            finally:
+                if websocket in active_websockets:
+                    active_websockets.remove(websocket)
+                logger.info(f"WebSocket connection closed. Active connections: {len(active_websockets)}")
 
-        # === ^^^ ===
-
-        # Main control loop - keep robot idle
-        logger.info("Chef Reachy ready! Use the web interface to capture and identify food.")
+        if tracking_enabled:
+            logger.info("Chef Reachy ready! Continuous detection and tracking enabled.")
+        else:
+            logger.info("Chef Reachy ready! Continuous detection enabled.")
 
         while not stop_event.is_set():
-            time.sleep(0.1)
+            # Continuous detection loop - runs regardless of whether food is detected
+            if self.detector_ready and self.detector is not None and camera_capture:
+                current_time = time.time()
+                if current_time - last_detection_update >= self.detector.vision_config.tracking_update_rate:
+                    try:
+                        # Capture current frame
+                        frame = camera_capture.capture_frame()
+                        if frame is None:
+                            logger.warning("Failed to capture frame from camera")
+                            broadcast_to_websockets({
+                                "status": "camera_error",
+                                "message": "Camera frame capture failed",
+                                "detections": [],
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                            last_detection_update = current_time
+                            time.sleep(0.01)
+                            continue
+
+                        # Run detection to find hand with food
+                        detections = self.detector.detect(
+                            frame,
+                            candidate_labels=self.detector.vision_config.food_labels,
+                            threshold=self.detector.vision_config.detection_threshold,
+                        )
+
+                        if detections:
+                            best_detection = max(detections, key=lambda d: d["score"])
+                            box = best_detection["box"]
+
+                            target_x = (box["xmin"] + box["xmax"]) / 2
+                            target_y = (box["ymin"] + box["ymax"]) / 2
+
+                            logger.info(
+                                f"Food detected: {best_detection['label']} ({best_detection['score']:.2f}) "
+                                f"at ({int(target_x)}, {int(target_y)})"
+                            )
+
+                            if tracking_enabled:
+                                reachy_mini.look_at_image(
+                                    int(target_x),
+                                    int(target_y),
+                                    duration=0.3
+                                )
+
+                            annotated_frame = draw_bboxes(frame, detections)
+                            annotated_base64 = encode_image_base64(annotated_frame)
+
+                            broadcast_to_websockets({
+                                "status": "detected",
+                                "detections": detections,
+                                "annotated_image": annotated_base64,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+
+                        else:
+                            logger.info("No food detected")
+
+                            image_base64 = encode_image_base64(frame)
+
+                            broadcast_to_websockets({
+                                "status": "no_detection",
+                                "detections": [],
+                                "annotated_image": image_base64,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+
+                    except Exception as e:
+                        logger.error(f"Detection error: {e}")
+                        broadcast_to_websockets({
+                            "status": "error",
+                            "message": str(e),
+                            "detections": [],
+                            "timestamp": datetime.now().isoformat(),
+                        })
+
+                    last_detection_update = current_time
+
+            time.sleep(0.01)  # 100Hz loop rate
 
 
 if __name__ == "__main__":

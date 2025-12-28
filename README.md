@@ -5,26 +5,41 @@ colorFrom: red
 colorTo: blue
 sdk: static
 pinned: false
-short_description: Food identification using SmolVLM2 vision model on Reachy Mini
+short_description: Food detection using OWL-ViT object detection on Reachy Mini
 tags:
  - reachy_mini
  - reachy_mini_python_app
  - computer_vision
- - food_recognition
+ - object_detection
+ - food_detection
 ---
 
 # Chef Reachy
 
-A Reachy Mini application that uses the SmolVLM2 vision model to identify food items from the robot's camera.
+A Reachy Mini application that uses OWL-ViT (Open-World Localization with Vision Transformer) for zero-shot object detection to detect hands holding food and automatically track them with the robot's cameras.
 
 ## Features
 
-- Real-time food identification using SmolVLM2-2.2B-Instruct model
-- Web-based control interface
-- On-demand image capture and processing
-- Custom prompt support for flexible queries
-- Device-aware model loading (CUDA, MPS, or CPU)
-- Memory management with model load/unload controls
+- **Continuous food detection** - automatically detects hands holding food every 2.5 seconds
+- **Zero-shot detection** using OWL-ViT (google/owlvit-base-patch32) - no training required
+- **Automatic camera tracking** - cameras follow the detected hand with food using `look_at_image()` API
+- **Real-time WebSocket streaming** - live camera feed with detection updates
+- **Bounding box visualization** - shows where hands and food are located in the frame
+- **Fully automatic operation** - no button clicks needed, just open the web interface
+- **Smooth camera movements** - robot looks at detected hand position in image
+- Device-aware model loading (CUDA or CPU)
+- Lightweight model (~600MB vs 4.5GB for SmolVLM2)
+- Fast inference (2-4 seconds on CPU)
+
+## How It Works
+
+1. **Automatic Initialization**: OWL-ViT model loads on startup (before server starts)
+2. **Continuous Detection Loop**: Main loop captures frames and runs detection every 2.5 seconds (matches inference time)
+3. **Zero-Shot Detection**: Uses text queries like "hand holding food" to detect hands without any training
+4. **Bounding Box Localization**: Returns precise bounding boxes showing where the hand is in the image
+5. **Camera Tracking**: When food is detected, calculates center of bounding box and uses `reachy_mini.look_at_image(x, y)` to move cameras
+6. **WebSocket Streaming**: Broadcasts detection results (both "detected" and "no_detection" status) in real-time to web interface
+7. **Live Visualization**: Web interface displays camera feed with bounding boxes and detection status automatically
 
 ## Installation
 
@@ -32,6 +47,8 @@ A Reachy Mini application that uses the SmolVLM2 vision model to identify food i
 
 2. Install dependencies:
 ```bash
+uv sync
+# or
 pip install -e .
 ```
 
@@ -44,62 +61,110 @@ cp .env.example .env
 ```
 
 Configuration options:
-- `HF_HOME`: Directory for model cache (default: `./cache/huggingface`)
+- `HF_HOME`: Directory for model cache (default: `~/.cache/huggingface`)
 - `HF_TOKEN`: Optional Hugging Face token for gated models
-- `LOCAL_VISION_MODEL`: Vision model to use (default: `HuggingFaceTB/SmolVLM2-2.2B-Instruct`)
-- `VISION_DEVICE`: Device preference (`auto`, `cuda`, `mps`, or `cpu`)
-- `VISION_MAX_TOKENS`: Max tokens for vision response (default: 64)
+- `VISION_MODEL`: Vision model to use (default: `google/owlvit-base-patch32`)
+- `VISION_DEVICE`: Device preference (`auto`, `cuda`, or `cpu`)
+- `VISION_DETECTION_THRESHOLD`: Confidence threshold (default: 0.15)
 - `VISION_JPEG_QUALITY`: JPEG quality for encoding (1-100, default: 85)
+- `FOOD_LABELS`: Comma-separated list of detection labels (defaults defined in `chef_reachy/vision/config.py`)
+- `ENABLE_TRACKING`: Enable automatic camera tracking (default: true)
+- `TRACKING_KP`: Proportional gain for tracking (default: 1.0, higher = faster response)
+- `TRACKING_UPDATE_RATE`: Update rate in seconds (default: 2.5s = ~0.4Hz, matches OWL-ViT inference time)
+- `MAX_ROTATION_DEG`: Maximum camera rotation angle (default: 30.0 degrees)
 
 ## Usage
 
-1. Run the application (through the Reachy Mini app system)
-   - The vision model will automatically download and initialize **before the server starts**
+1. Run the application:
+```bash
+uv run ./chef_reachy/main.py
+```
+
+2. The OWL-ViT detector will automatically initialize **before the server starts**
    - Watch the console for initialization progress logs
-   - First run may take 10-30 seconds to download the ~5GB model
+   - First run may take 10-30 seconds to download the ~600MB model
+   - Subsequent runs load from cache (much faster)
 
-2. Open the web interface at `http://0.0.0.0:8042`
+3. Open the web interface at `http://0.0.0.0:8042`
+   - The web interface automatically connects via WebSocket and starts streaming
+   - **No button clicks needed** - detection runs continuously in the background
 
-3. The status will show "Model ready on [device]" when initialization is complete
+4. Hold food in your hand (or have Reachy hold food in its gripper)
 
-4. Position food items in the camera view
+5. The system will automatically:
+   - **Continuously detect** hands holding food using OWL-ViT (every 2.5 seconds)
+   - Show **live camera feed** with bounding boxes when food is detected
+   - **Automatically track the hand** - robot cameras follow the detected hand position using `look_at_image()`
+   - Display **real-time detection status** with confidence scores and timestamps
+   - Log "No food detected" when no hand with food is visible
 
-5. Click "Capture & Identify Food" to analyze the image
+6. Move the hand around - the cameras will follow it automatically with live updates!
 
-6. (Optional) Enter custom prompts for specific queries
+7. Check the console logs to see detection results in real-time
 
 ## Hardware Requirements
 
 - **Minimum**: 8GB RAM, CPU processing
-- **Recommended**: 16GB RAM, Apple Silicon M1/M2 or NVIDIA GPU
-- **Optimal**: 32GB RAM, Apple Silicon M3/M4 or NVIDIA RTX GPU
+- **Recommended**: 16GB RAM, NVIDIA GPU (CUDA)
+- **Note**: OWL-ViT is much lighter than SmolVLM2 and runs well on CPU
 
 ## Storage Requirements
 
-- ~5GB for model cache
+- ~600MB for model cache (vs 5GB for SmolVLM2)
 - ~100MB temporary space for processing
 
 ## Performance
 
 **Model Loading:**
 - First load: 10-30 seconds (downloading + loading)
-- Subsequent loads: 3-10 seconds (from cache)
+- Subsequent loads: 2-5 seconds (from cache)
 
 **Inference Time:**
-- Apple Silicon (MPS): 2-4 seconds
-- NVIDIA GPU (CUDA): 1-2 seconds
-- CPU: 5-10 seconds
+- NVIDIA GPU (CUDA): 1-2 seconds per image
+- CPU: 2-4 seconds per image
+
+**Memory Usage:**
+- Model: ~1.5GB RAM
+- Peak during inference: ~2-3GB RAM
 
 ## API Endpoints
 
-- `POST /vision/capture_and_process` - Capture and process image
-- `GET /vision/status` - Get vision system status
+### WebSocket API
 
-Note: The vision model initializes automatically **before** the app server starts. The model stays loaded for the lifetime of the application.
+- `WS /vision/stream` - Real-time continuous detection streaming
+  - **Automatically streams detection results** every 2.5 seconds (matches inference time)
+  - **Message format when food detected**:
+    ```json
+    {
+      "status": "detected",
+      "detections": [
+        {"label": "hand holding food", "score": 0.87, "box": {"xmin": 150, "ymin": 100, "xmax": 350, "ymax": 300}}
+      ],
+      "annotated_image": "base64_encoded_jpeg_with_bounding_boxes",
+      "timestamp": "2025-12-28T10:30:15.123Z"
+    }
+    ```
+  - **Message format when no food detected**:
+    ```json
+    {
+      "status": "no_detection",
+      "detections": [],
+      "annotated_image": "base64_encoded_jpeg_without_bounding_boxes",
+      "timestamp": "2025-12-28T10:30:18.456Z"
+    }
+    ```
+  - **Connection**: Client connects on page load and receives continuous live updates
 
-## Design Documentation
+## Why OWL-ViT over SmolVLM2?
 
-See [VISION_DESIGN.md](VISION_DESIGN.md) for detailed architecture and design decisions.
+| Feature | OWL-ViT | SmolVLM2 |
+|---------|---------|----------|
+| **Task** | Object detection | Image captioning |
+| **Output** | Bounding boxes + labels | Text description |
+| **Model size** | ~600MB | ~4.5GB |
+| **Inference time (CPU)** | 2-4 seconds | 5-10 seconds |
+| **Memory usage** | ~2-3GB | ~8GB |
+| **Use case fit** | Perfect for locating food | General purpose |
 
 ## License
 
