@@ -244,6 +244,10 @@ class ChefReachy(ReachyMiniApp):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     app = ChefReachy()
     try:
         app.wrapped_run()
