@@ -30,6 +30,7 @@ A Reachy Mini application that uses OWL-ViT (Open-World Localization with Vision
 - Device-aware model loading (CUDA or CPU)
 - Lightweight model (~600MB vs 4.5GB for SmolVLM2)
 - Fast inference (2-4 seconds on CPU)
+- **Text-to-speech announcements** - Robot speaks friendly phrases when food is detected using Kokoro-82M (82MB model)
 
 ## How It Works
 
@@ -39,7 +40,8 @@ A Reachy Mini application that uses OWL-ViT (Open-World Localization with Vision
 4. **Bounding Box Localization**: Returns precise bounding boxes showing where the hand is in the image
 5. **Camera Tracking**: When food is detected, calculates center of bounding box and uses `reachy_mini.look_at_image(x, y)` to move cameras
 6. **WebSocket Streaming**: Broadcasts detection results (both "detected" and "no_detection" status) in real-time to web interface
-7. **Live Visualization**: Web interface displays camera feed with bounding boxes and detection status automatically
+7. **Text-to-Speech**: When food detected, generates speech using Kokoro-82M and plays through robot speaker with phrase "I found {label}"
+8. **Live Visualization**: Web interface displays camera feed with bounding boxes and detection status automatically
 
 ## Installation
 
@@ -72,6 +74,10 @@ Configuration options:
 - `TRACKING_KP`: Proportional gain for tracking (default: 1.0, higher = faster response)
 - `TRACKING_UPDATE_RATE`: Update rate in seconds (default: 2.5s = ~0.4Hz, matches OWL-ViT inference time)
 - `MAX_ROTATION_DEG`: Maximum camera rotation angle (default: 30.0 degrees)
+- `TTS_MODEL`: Text-to-speech model (default: `hexgrad/Kokoro-82M`)
+- `TTS_VOICE`: Voice to use (default: `af_heart`)
+- `TTS_DEVICE`: Device for TTS (`auto`, `cuda`, or `cpu`)
+- `TTS_SAMPLE_RATE`: Audio sample rate (default: 16000Hz)
 
 ## Usage
 
@@ -80,9 +86,9 @@ Configuration options:
 uv run ./chef_reachy/main.py
 ```
 
-2. The OWL-ViT detector will automatically initialize **before the server starts**
+2. The OWL-ViT detector and Kokoro-82M TTS will automatically initialize **before the server starts**
    - Watch the console for initialization progress logs
-   - First run may take 10-30 seconds to download the ~600MB model
+   - First run may take 20-40 seconds to download models (~680MB total)
    - Subsequent runs load from cache (much faster)
 
 3. Open the web interface at `http://0.0.0.0:8042`
@@ -95,6 +101,7 @@ uv run ./chef_reachy/main.py
    - **Continuously detect** hands holding food using OWL-ViT (every 2.5 seconds)
    - Show **live camera feed** with bounding boxes when food is detected
    - **Automatically track the hand** - robot cameras follow the detected hand position using `look_at_image()`
+   - **Speak friendly phrases** like "I found hand holding food" using text-to-speech
    - Display **real-time detection status** with confidence scores and timestamps
    - Log "No food detected" when no hand with food is visible
 
@@ -110,8 +117,10 @@ uv run ./chef_reachy/main.py
 
 ## Storage Requirements
 
-- ~600MB for model cache (vs 5GB for SmolVLM2)
+- ~600MB for OWL-ViT model cache
+- ~82MB for Kokoro-82M TTS model
 - ~100MB temporary space for processing
+- **Total**: ~780MB for models
 
 ## Performance
 

@@ -7,6 +7,10 @@ from datetime import datetime
 from fastapi import WebSocket, WebSocketDisconnect
 from reachy_mini import ReachyMini, ReachyMiniApp
 
+from chef_reachy.audio import (
+    AudioConfig,
+    MeloTTSPlayer,
+)
 from chef_reachy.vision import (
     CameraCapture,
     OwlVitDetector,
@@ -73,6 +77,43 @@ class ChefReachy(ReachyMiniApp):
             logger.error("=" * 60)
             logger.error("App will continue without detection capabilities")
 
+        # Initialize Kokoro TTS player BEFORE server starts
+        logger.info("=" * 60)
+        logger.info("INITIALIZING KOKORO-82M TEXT-TO-SPEECH")
+        logger.info("=" * 60)
+        logger.info("This will download model on first run (82MB)...")
+
+        self.tts_player: MeloTTSPlayer | None = None
+        self.tts_ready = False
+        self.tts_error: str | None = None
+
+        try:
+            audio_config = AudioConfig()
+            logger.info(f"Model: {audio_config.model_path}")
+            logger.info(f"Device: {audio_config.device_preference}")
+            logger.info(f"Sample rate: {audio_config.target_sample_rate}Hz")
+
+            self.tts_player = MeloTTSPlayer(audio_config)
+
+            if self.tts_player.initialize():
+                model_info = self.tts_player.get_model_info()
+                device = model_info.get("device", "unknown")
+                logger.info("=" * 60)
+                logger.info(f"✓ KOKORO-82M TTS READY ON {device.upper()}!")
+                logger.info("=" * 60)
+                self.tts_ready = True
+            else:
+                self.tts_error = "Failed to initialize Kokoro-82M TTS"
+                logger.error("=" * 60)
+                logger.error("✗ TTS INITIALIZATION FAILED")
+                logger.error("=" * 60)
+        except Exception as e:
+            self.tts_error = str(e)
+            logger.error("=" * 60)
+            logger.error(f"✗ TTS ERROR: {e}")
+            logger.error("=" * 60)
+            logger.error("App will continue without TTS capabilities")
+
     def run(self, reachy_mini: ReachyMini, stop_event: threading.Event):
         # Vision state
         camera_capture: CameraCapture | None = None
@@ -112,6 +153,11 @@ class ChefReachy(ReachyMiniApp):
         except Exception as e:
             logger.error(f"Failed to initialize camera capture: {e}")
 
+        # Set ReachyMini reference for TTS player
+        if self.tts_ready and self.tts_player:
+            self.tts_player.set_reachy_mini(reachy_mini)
+            logger.info("TTS player connected to ReachyMini audio")
+
         assert self.settings_app is not None, "settings_app must be available when custom_app_url is set"
 
         @self.settings_app.websocket("/vision/stream")
@@ -145,7 +191,7 @@ class ChefReachy(ReachyMiniApp):
                 while True:
                     try:
                         await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
             except WebSocketDisconnect:
                 logger.info("WebSocket client disconnected")
@@ -216,6 +262,13 @@ class ChefReachy(ReachyMiniApp):
                                 "annotated_image": annotated_base64,
                                 "timestamp": datetime.now().isoformat(),
                             })
+
+                            # Speak about the detection
+                            if self.tts_ready and self.tts_player:
+                                try:
+                                    self.tts_player.speak_detection(best_detection["label"])
+                                except Exception as e:
+                                    logger.error(f"TTS playback error: {e}")
 
                         else:
                             logger.info("No food detected")

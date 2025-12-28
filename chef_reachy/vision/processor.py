@@ -9,7 +9,6 @@ from typing import Any
 import cv2
 import numpy as np
 import torch
-from huggingface_hub import snapshot_download
 from numpy.typing import NDArray
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
@@ -80,7 +79,7 @@ class VisionProcessor:
                 logger.info(f"✓ Model found in cache at {model_cache_path}")
                 logger.info("Loading from cache (should be fast)...")
             else:
-                logger.info(f"✗ Model NOT in cache")
+                logger.info("✗ Model NOT in cache")
                 logger.info(f"Will download to {model_cache_path}")
                 logger.info("This will take 10-30 seconds and download ~5GB...")
 

@@ -44,7 +44,7 @@ try:
     )
     print(f"   ✓ Processor loaded successfully: {type(processor)}")
 except Exception as e:
-    print(f"   ✗ Failed to load processor:")
+    print("   ✗ Failed to load processor:")
     print(f"   Error: {e}")
     traceback.print_exc()
     sys.exit(1)
@@ -62,7 +62,7 @@ try:
     print(f"   ✓ Model loaded successfully: {type(model)}")
     print(f"   Device: {next(model.parameters()).device}")
 except Exception as e:
-    print(f"   ✗ Failed to load model:")
+    print("   ✗ Failed to load model:")
     print(f"   Error: {e}")
     traceback.print_exc()
     sys.exit(1)
