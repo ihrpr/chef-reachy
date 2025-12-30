@@ -18,13 +18,10 @@ class VisionConfig:
     food_labels: list[str] = field(
         default_factory=lambda: [
             "hand holding food",
-            "hand with food",
-            "person hand holding object",
             "hand holding object",
-            "human hand with food",
             "food packaging",
-            "cookies",
-            "hand",  # fallback
+            "packaging",
+            "packaging with text",
         ]
     )
 

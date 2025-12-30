@@ -1,6 +1,46 @@
 let ws = null;
 let isStreaming = false;
 
+function updateInventoryDisplay(inventory) {
+    const inventoryList = document.getElementById("inventory-list");
+    const inventoryCount = document.getElementById("inventory-count");
+
+    if (!inventory || inventory.length === 0) {
+        inventoryList.innerHTML = '<li class="inventory-empty">No items detected yet</li>';
+        inventoryCount.textContent = "0";
+        return;
+    }
+
+    // Update count
+    inventoryCount.textContent = inventory.length;
+
+    // Render inventory items (newest first)
+    const itemsHtml = inventory
+        .slice()
+        .reverse()
+        .map(item => {
+            const detectedDate = new Date(item.detected_at);
+            const dateStr = detectedDate.toLocaleString();
+
+            return `
+                <li class="inventory-item">
+                    <div class="inventory-item-content">
+                        <div class="inventory-item-name">${item.product_name}</div>
+                        <div class="inventory-item-details">
+                            ${item.expiration_date ? `Expires: ${item.expiration_date}` : 'No expiration date'}
+                        </div>
+                        <div class="inventory-item-details">
+                            Detected: ${dateStr}
+                        </div>
+                    </div>
+                </li>
+            `;
+        })
+        .join("");
+
+    inventoryList.innerHTML = itemsHtml;
+}
+
 function connectWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/vision/stream`;
@@ -64,6 +104,11 @@ function connectWebSocket() {
             // Update timestamp
             if (data.timestamp) {
                 resultTimestamp.textContent = `Last update: ${new Date(data.timestamp).toLocaleTimeString()}`;
+            }
+
+            // Update inventory display if present
+            if (data.inventory) {
+                updateInventoryDisplay(data.inventory);
             }
         }
     };

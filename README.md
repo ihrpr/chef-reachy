@@ -23,6 +23,9 @@ A Reachy Mini application that uses OWL-ViT (Open-World Localization with Vision
 - **Continuous food detection** - automatically detects hands holding food every 2.5 seconds
 - **Zero-shot detection** using OWL-ViT (google/owlvit-base-patch32) - no training required
 - **Automatic camera tracking** - cameras follow the detected hand with food using `look_at_image()` API
+- **OCR text detection** - reads product packaging text using EasyOCR
+- **LLM-powered extraction** - extracts product name and expiration date using Gemma 2B
+- **Inventory tracking** - maintains in-memory list of detected food items with expiration dates
 - **Real-time WebSocket streaming** - live camera feed with detection updates
 - **Bounding box visualization** - shows where hands and food are located in the frame
 - **Fully automatic operation** - no button clicks needed, just open the web interface
@@ -32,6 +35,30 @@ A Reachy Mini application that uses OWL-ViT (Open-World Localization with Vision
 - Fast inference (2-4 seconds on CPU)
 - **Text-to-speech announcements** - Robot speaks friendly phrases when food is detected using Kokoro-82M (82MB model)
 
+## Architecture
+
+Chef Reachy now includes three intelligent modules:
+
+1. **OCR Module** (`chef_reachy/ocr/`) - EasyOCR integration for reading text from packaging
+2. **LLM Module** (`chef_reachy/llm/`) - Ollama with Gemma 2B for extracting product information
+3. **Inventory Module** (`chef_reachy/inventory/`) - In-memory tracking of food items with expiration dates
+
+## Workflow
+
+```
+Hand with food detected (OWL-ViT)
+    ↓
+Crop detected region
+    ↓
+Run OCR (EasyOCR)
+    ↓
+Extract product info (Gemma 2B LLM)
+    ↓
+Add to inventory list
+    ↓
+Announce via TTS
+```
+
 ## How It Works
 
 1. **Automatic Initialization**: OWL-ViT model loads on startup (before server starts)
@@ -39,9 +66,12 @@ A Reachy Mini application that uses OWL-ViT (Open-World Localization with Vision
 3. **Zero-Shot Detection**: Uses text queries like "hand holding food" to detect hands without any training
 4. **Bounding Box Localization**: Returns precise bounding boxes showing where the hand is in the image
 5. **Camera Tracking**: When food is detected, calculates center of bounding box and uses `reachy_mini.look_at_image(x, y)` to move cameras
-6. **WebSocket Streaming**: Broadcasts detection results (both "detected" and "no_detection" status) in real-time to web interface
-7. **Text-to-Speech**: When food detected, generates speech using Kokoro-82M and plays through robot speaker with phrase "I found {label}"
-8. **Live Visualization**: Web interface displays camera feed with bounding boxes and detection status automatically
+6. **OCR Processing**: Crops detected region and runs EasyOCR to read text from packaging
+7. **LLM Extraction**: Uses Gemma 2B via Ollama to extract product name and expiration date from OCR text
+8. **Inventory Update**: Adds item to in-memory inventory with metadata (product name, expiration date, confidence)
+9. **WebSocket Streaming**: Broadcasts detection results (both "detected" and "no_detection" status) in real-time to web interface
+10. **Text-to-Speech**: When food detected, generates speech using Kokoro-82M and announces the item added to inventory
+11. **Live Visualization**: Web interface displays camera feed with bounding boxes and detection status automatically
 
 ## Installation
 
@@ -53,6 +83,20 @@ uv sync
 # or
 pip install -e .
 ```
+
+3. Install and setup Ollama for LLM-powered extraction:
+```bash
+# Install Ollama
+brew install ollama
+
+# Start Ollama server (in a separate terminal)
+ollama serve
+
+# Download Gemma 2B model
+ollama pull gemma:2b
+```
+
+The Gemma 2B model is lightweight (~1.6GB) and runs efficiently on M2 Macs.
 
 ## Configuration
 
@@ -119,8 +163,10 @@ uv run ./chef_reachy/main.py
 
 - ~600MB for OWL-ViT model cache
 - ~82MB for Kokoro-82M TTS model
+- ~80MB for EasyOCR model cache
+- ~1.6GB for Gemma 2B LLM model
 - ~100MB temporary space for processing
-- **Total**: ~780MB for models
+- **Total**: ~2.5GB for all models
 
 ## Performance
 

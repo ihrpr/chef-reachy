@@ -11,6 +11,18 @@ from chef_reachy.audio import (
     AudioConfig,
     MeloTTSPlayer,
 )
+from chef_reachy.inventory import (
+    FoodItem,
+    InventoryManager,
+)
+from chef_reachy.llm import (
+    LLMConfig,
+    OllamaClient,
+)
+from chef_reachy.ocr import (
+    OCRConfig,
+    OCRReader,
+)
 from chef_reachy.vision import (
     CameraCapture,
     OwlVitDetector,
@@ -113,6 +125,86 @@ class ChefReachy(ReachyMiniApp):
             logger.error(f"✗ TTS ERROR: {e}")
             logger.error("=" * 60)
             logger.error("App will continue without TTS capabilities")
+
+        # Initialize OCR reader BEFORE server starts
+        logger.info("=" * 60)
+        logger.info("INITIALIZING EASYOCR TEXT DETECTION")
+        logger.info("=" * 60)
+        logger.info("This will download model on first run (~80MB)...")
+
+        self.ocr_reader: OCRReader | None = None
+        self.ocr_ready = False
+        self.ocr_error: str | None = None
+
+        try:
+            ocr_config = OCRConfig()
+            logger.info(f"Languages: {ocr_config.languages}")
+            logger.info(f"Device: {ocr_config.device_preference}")
+            logger.info(f"Confidence threshold: {ocr_config.confidence_threshold}")
+
+            self.ocr_reader = OCRReader(ocr_config)
+
+            if self.ocr_reader.initialize():
+                model_info = self.ocr_reader.get_model_info()
+                logger.info("=" * 60)
+                logger.info("✓ EASYOCR READER READY!")
+                logger.info("=" * 60)
+                self.ocr_ready = True
+            else:
+                self.ocr_error = "Failed to initialize EasyOCR reader"
+                logger.error("=" * 60)
+                logger.error("✗ OCR INITIALIZATION FAILED")
+                logger.error("=" * 60)
+        except Exception as e:
+            self.ocr_error = str(e)
+            logger.error("=" * 60)
+            logger.error(f"✗ OCR ERROR: {e}")
+            logger.error("=" * 60)
+            logger.error("App will continue without OCR capabilities")
+
+        # Initialize LLM client BEFORE server starts
+        logger.info("=" * 60)
+        logger.info("INITIALIZING OLLAMA LLM CLIENT")
+        logger.info("=" * 60)
+        logger.info("Connecting to Ollama server...")
+
+        self.llm_client: OllamaClient | None = None
+        self.llm_ready = False
+        self.llm_error: str | None = None
+
+        try:
+            llm_config = LLMConfig()
+            logger.info(f"Model: {llm_config.model_name}")
+            logger.info(f"Host: {llm_config.host}")
+
+            self.llm_client = OllamaClient(llm_config)
+
+            if self.llm_client.initialize():
+                model_info = self.llm_client.get_model_info()
+                logger.info("=" * 60)
+                logger.info("✓ OLLAMA LLM CLIENT READY!")
+                logger.info("=" * 60)
+                self.llm_ready = True
+            else:
+                self.llm_error = "Failed to initialize Ollama client"
+                logger.error("=" * 60)
+                logger.error("✗ LLM INITIALIZATION FAILED")
+                logger.error("=" * 60)
+        except Exception as e:
+            self.llm_error = str(e)
+            logger.error("=" * 60)
+            logger.error(f"✗ LLM ERROR: {e}")
+            logger.error("=" * 60)
+            logger.error("App will continue without LLM capabilities")
+
+        # Initialize inventory manager (in-memory only)
+        logger.info("=" * 60)
+        logger.info("INITIALIZING INVENTORY MANAGER")
+        logger.info("=" * 60)
+
+        self.inventory = InventoryManager(storage_path=None)
+        logger.info("✓ INVENTORY MANAGER READY (in-memory)")
+        logger.info("=" * 60)
 
     def run(self, reachy_mini: ReachyMini, stop_event: threading.Event):
         # Vision state
@@ -256,15 +348,107 @@ class ChefReachy(ReachyMiniApp):
                             annotated_frame = draw_bboxes(frame, detections)
                             annotated_base64 = encode_image_base64(annotated_frame)
 
+                            # Process OCR and LLM if enabled
+                            ocr_result = None
+                            product_info = None
+                            if (
+                                self.ocr_ready
+                                and self.ocr_reader is not None
+                                and self.llm_ready
+                                and self.llm_client is not None
+                            ):
+                                try:
+                                    # Crop detected region with more padding to capture text
+                                    import cv2
+
+                                    height, width = frame.shape[:2]
+                                    padding = 50  # Increased padding to capture more text
+                                    x1 = max(0, int(box["xmin"]) - padding)
+                                    y1 = max(0, int(box["ymin"]) - padding)
+                                    x2 = min(width, int(box["xmax"]) + padding)
+                                    y2 = min(height, int(box["ymax"]) + padding)
+
+                                    cropped = frame[y1:y2, x1:x2]
+
+                                    # Save cropped image for debugging
+                                    debug_path = "/tmp/chef_reachy_ocr_debug.jpg"
+                                    cv2.imwrite(debug_path, cropped)
+                                    logger.info(f"Saved cropped region to {debug_path} (size: {cropped.shape})")
+
+                                    # Run OCR on cropped region
+                                    logger.info("Running OCR on detected food item...")
+                                    ocr_results = self.ocr_reader.read_text(cropped, detail=1)
+                                    logger.info(f"OCR found {len(ocr_results)} text regions (before filtering)")
+
+                                    # Log all detections for debugging
+                                    for result in ocr_results:
+                                        logger.info(f"  Text: '{result['text']}' (confidence: {result['confidence']:.2f})")
+
+                                    ocr_text = self.ocr_reader.get_full_text(cropped)
+
+                                    if ocr_text.strip():
+                                        logger.info(f"OCR text: {ocr_text}")
+
+                                        # Use LLM to extract product info
+                                        logger.info("Extracting product info with LLM...")
+                                        product_info = self.llm_client.extract_product_info(ocr_text)
+
+                                        if product_info.get("product_name"):
+                                            # Add to inventory
+                                            item = FoodItem(
+                                                product_name=product_info["product_name"],
+                                                expiration_date=product_info.get("expiration_date"),
+                                                ocr_text=ocr_text,
+                                                confidence=best_detection["score"],
+                                            )
+                                            self.inventory.add_item(item)
+
+                                            logger.info(
+                                                f"Added to inventory: {item.product_name} "
+                                                f"(expires: {item.expiration_date})"
+                                            )
+
+                                            # Speak about the new item
+                                            if self.tts_ready and self.tts_player:
+                                                try:
+                                                    msg = f"Added {item.product_name} to inventory"
+                                                    if item.expiration_date:
+                                                        msg += f" expires on {item.expiration_date}"
+                                                    self.tts_player.speak_detection(msg)
+                                                except Exception as e:
+                                                    logger.error(f"TTS playback error: {e}")
+                                        else:
+                                            logger.info("Could not extract product name from OCR text")
+                                    else:
+                                        logger.info("No text detected in the food item")
+
+                                except Exception as e:
+                                    logger.error(f"OCR/LLM processing error: {e}")
+
+                            # Get current inventory as serializable dict list
+                            inventory_items = [
+                                {
+                                    "id": item.id,
+                                    "product_name": item.product_name,
+                                    "expiration_date": item.expiration_date,
+                                    "detected_at": item.detected_at.isoformat(),
+                                    "confidence": item.confidence,
+                                }
+                                for item in self.inventory.get_all_items()
+                            ]
+
                             broadcast_to_websockets({
                                 "status": "detected",
                                 "detections": detections,
                                 "annotated_image": annotated_base64,
                                 "timestamp": datetime.now().isoformat(),
+                                "ocr_result": ocr_result,
+                                "product_info": product_info,
+                                "inventory": inventory_items,
                             })
 
-                            # Speak about the detection
-                            if self.tts_ready and self.tts_player:
+                            # Speak about the detection (if OCR/LLM didn't speak)
+                            if self.tts_ready and self.tts_player and not product_info:
                                 try:
                                     self.tts_player.speak_detection(best_detection["label"])
                                 except Exception as e:
@@ -275,11 +459,24 @@ class ChefReachy(ReachyMiniApp):
 
                             image_base64 = encode_image_base64(frame)
 
+                            # Get current inventory as serializable dict list
+                            inventory_items = [
+                                {
+                                    "id": item.id,
+                                    "product_name": item.product_name,
+                                    "expiration_date": item.expiration_date,
+                                    "detected_at": item.detected_at.isoformat(),
+                                    "confidence": item.confidence,
+                                }
+                                for item in self.inventory.get_all_items()
+                            ]
+
                             broadcast_to_websockets({
                                 "status": "no_detection",
                                 "detections": [],
                                 "annotated_image": image_base64,
                                 "timestamp": datetime.now().isoformat(),
+                                "inventory": inventory_items,
                             })
 
                     except Exception as e:
