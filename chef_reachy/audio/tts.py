@@ -36,6 +36,7 @@ class MeloTTSPlayer:
         self.tts_pipeline = None
         self._initialized = False
         self.reachy_mini = None
+        self.movements = None  # Will be set when reachy_mini is set
         # Interruption support
         self._interrupted = False
         self._is_speaking = False
@@ -112,7 +113,18 @@ class MeloTTSPlayer:
         Args:
             reachy_mini: ReachyMini robot instance
         """
+        from chef_reachy.agent.movements import RobotMovements
+
         self.reachy_mini = reachy_mini
+        self.movements = RobotMovements(reachy_mini)
+
+    def _trigger_speaking_movement(self) -> None:
+        """Trigger random movements while speaking to make robot more lifelike.
+
+        This is called from a background thread, so we use threaded execution.
+        """
+        if self.movements:
+            self.movements.random_speaking_movement()
 
     def start_async_worker(self) -> None:
         """Start the background TTS worker thread."""
@@ -283,6 +295,10 @@ class MeloTTSPlayer:
                 # Generate speech using Kokoro pipeline (streaming)
                 generator = self.tts_pipeline(text, voice=self.voice)
 
+                # Track movements during speech
+                movement_counter = 0
+                movement_interval = random.randint(4, 8)  # Trigger movement every 4-8 chunks
+
                 for _, _, audio in generator:
                     if self._interrupted:
                         break
@@ -290,6 +306,12 @@ class MeloTTSPlayer:
                     # Skip if no audio generated for this chunk
                     if audio is None:
                         continue
+
+                    # Trigger movements periodically during speech
+                    movement_counter += 1
+                    if movement_counter % movement_interval == 1:
+                        self._trigger_speaking_movement()
+                        movement_interval = random.randint(4, 8)  # Randomize next interval
 
                     # Convert to numpy if needed (Kokoro returns torch tensors)
                     audio_np: NDArray[np.float32]

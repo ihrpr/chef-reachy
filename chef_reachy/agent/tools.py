@@ -67,7 +67,14 @@ async def analyze_images_with_claude(
         content: list[ImageBlockParam | TextBlockParam] = []
         for img_b64 in images:
             content.append(
-                ImageBlockParam(type="image", source={"type": "base64", "media_type": "image/jpeg", "data": img_b64})
+                ImageBlockParam(
+                    type="image",
+                    source={
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": img_b64,
+                    },
+                )
             )
 
         # Add prompt
@@ -87,7 +94,9 @@ async def analyze_images_with_claude(
 
         # Call Claude Vision API
         message_param: MessageParam = {"role": "user", "content": content}
-        response = client.messages.create(model=model, max_tokens=512, messages=[message_param])
+        response = client.messages.create(
+            model=model, max_tokens=512, messages=[message_param]
+        )
 
         # Parse response - handle different content block types
         response_text = ""
@@ -135,11 +144,24 @@ def create_chef_tools(
         List of tool functions decorated with @tool
     """
     from claude_agent_sdk import tool
+    from chef_reachy.agent.movements import RobotMovements
+
+    # Initialize movement controller
+    movements = RobotMovements(reachy_mini)
 
     def broadcast(event: dict[str, Any]):
         """Broadcast event if broadcaster is available."""
         if broadcaster:
             broadcaster(event)
+
+    def trigger_movement(movement_type: str) -> None:
+        """
+        Trigger a robot movement in fire-and-forget mode.
+
+        Args:
+            movement_type: One of "nod", "no_shake", "greet", "thinking"
+        """
+        movements.trigger_movement_async(movement_type)
 
     @tool(
         "scan_food_item",
@@ -159,14 +181,18 @@ def create_chef_tools(
         num_angles = args.get("num_angles", 3)
 
         try:
+            # Robot looks curious and ready to scan
+            trigger_movement("thinking")
 
             # Broadcast tool start
-            broadcast({
-                "type": "tool_progress",
-                "tool_name": "scan_food_item",
-                "message": f"Starting food scan with {num_angles} angles...",
-                "timestamp": time.time(),
-            })
+            broadcast(
+                {
+                    "type": "tool_progress",
+                    "tool_name": "scan_food_item",
+                    "message": f"Starting food scan with {num_angles} angles...",
+                    "timestamp": time.time(),
+                }
+            )
 
             # Capture images
             images = []
@@ -178,15 +204,17 @@ def create_chef_tools(
                         images.append(img_b64)
 
                         # Broadcast captured image
-                        broadcast({
-                            "type": "tool_image",
-                            "tool_name": "scan_food_item",
-                            "image": img_b64,
-                            "image_index": i + 1,
-                            "total_images": num_angles,
-                            "message": f"Captured image {i + 1}/{num_angles}",
-                            "timestamp": time.time(),
-                        })
+                        broadcast(
+                            {
+                                "type": "tool_image",
+                                "tool_name": "scan_food_item",
+                                "image": img_b64,
+                                "image_index": i + 1,
+                                "total_images": num_angles,
+                                "message": f"Captured image {i + 1}/{num_angles}",
+                                "timestamp": time.time(),
+                            }
+                        )
                 except Exception as e:
                     logger.error(f"Failed to capture frame {i + 1}: {e}")
 
@@ -195,33 +223,58 @@ def create_chef_tools(
                     await asyncio.sleep(3)
 
             if not images:
-                broadcast({
-                    "type": "tool_error",
-                    "tool_name": "scan_food_item",
-                    "message": "Failed to capture any images",
-                    "timestamp": time.time(),
-                })
-                return {"content": [{"type": "text", "text": "Failed to capture any images from camera."}], "is_error": True}
+                broadcast(
+                    {
+                        "type": "tool_error",
+                        "tool_name": "scan_food_item",
+                        "message": "Failed to capture any images",
+                        "timestamp": time.time(),
+                    }
+                )
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Failed to capture any images from camera.",
+                        }
+                    ],
+                    "is_error": True,
+                }
 
             # Broadcast analyzing status
-            broadcast({
-                "type": "tool_progress",
-                "tool_name": "scan_food_item",
-                "message": f"Analyzing {len(images)} images with Claude Vision...",
-                "timestamp": time.time(),
-            })
+            broadcast(
+                {
+                    "type": "tool_progress",
+                    "tool_name": "scan_food_item",
+                    "message": f"Analyzing {len(images)} images with Claude Vision...",
+                    "timestamp": time.time(),
+                }
+            )
 
-            # Analyze with Claude Vision
+            # Analyze with Claude Vision - robot thinking
+            trigger_movement("thinking")
             result = await analyze_images_with_claude(images, api_key)
 
             if result["product_name"] == "Unknown":
-                broadcast({
-                    "type": "tool_error",
-                    "tool_name": "scan_food_item",
-                    "message": "Could not identify product from images",
-                    "timestamp": time.time(),
-                })
-                return {"content": [{"type": "text", "text": "Could not identify product from images. Please ensure packaging is clearly visible."}], "is_error": True}
+                # Robot shows concern/confusion
+                trigger_movement("no_shake")
+                broadcast(
+                    {
+                        "type": "tool_error",
+                        "tool_name": "scan_food_item",
+                        "message": "Could not identify product from images",
+                        "timestamp": time.time(),
+                    }
+                )
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Could not identify product from images. Please ensure packaging is clearly visible.",
+                        }
+                    ],
+                    "is_error": True,
+                }
 
             # Create food item
             item = FoodItem(
@@ -234,121 +287,26 @@ def create_chef_tools(
             # Add to inventory
             inventory.add_item(item)
 
+            # Robot nods in acknowledgment of successful scan
+            trigger_movement("nod")
+
             # Broadcast success with result
-            broadcast({
-                "type": "tool_result",
-                "tool_name": "scan_food_item",
-                "status": "success",
-                "product_name": item.product_name,
-                "expiration_date": item.expiration_date,
-                "message": f"Added {item.product_name} to inventory",
-                "timestamp": time.time(),
-            })
+            broadcast(
+                {
+                    "type": "tool_result",
+                    "tool_name": "scan_food_item",
+                    "status": "success",
+                    "product_name": item.product_name,
+                    "expiration_date": item.expiration_date,
+                    "message": f"Added {item.product_name} to inventory",
+                    "timestamp": time.time(),
+                }
+            )
 
             # Broadcast inventory update
             all_items = inventory.get_all_items()
-            broadcast({
-                "type": "inventory_update",
-                "items": [
-                    {
-                        "id": it.id,
-                        "product_name": it.product_name,
-                        "expiration_date": it.expiration_date,
-                        "detected_at": it.detected_at.isoformat(),
-                    }
-                    for it in all_items
-                ],
-                "timestamp": time.time(),
-            })
-
-            # Return MCP-formatted response
-            result_text = f"Successfully added '{item.product_name}' to inventory."
-            if item.expiration_date:
-                result_text += f" Expiration date: {item.expiration_date}."
-            return {"content": [{"type": "text", "text": result_text}]}
-
-        except Exception as e:
-            logger.error(f"Error scanning food item: {e}")
-            broadcast({
-                "type": "tool_error",
-                "tool_name": "scan_food_item",
-                "message": str(e),
-                "timestamp": time.time(),
-            })
-            return {"content": [{"type": "text", "text": f"Error scanning food item: {e}"}], "is_error": True}
-
-    @tool("get_inventory", "Retrieve all items in the food inventory", {})
-    async def get_inventory(args: dict[str, Any]) -> dict[str, Any]:
-        """Get all items in inventory."""
-        try:
-            items = inventory.get_all_items()
-
-            # Broadcast inventory query
-            broadcast({
-                "type": "tool_result",
-                "tool_name": "get_inventory",
-                "status": "success",
-                "message": f"Retrieved {len(items)} items from inventory",
-                "timestamp": time.time(),
-            })
-
-            # Build human-readable response for Claude
-            if not items:
-                result_text = "The inventory is empty. No items have been added yet."
-            else:
-                item_lines = []
-                for item in items:
-                    line = f"- {item.product_name}"
-                    if item.expiration_date:
-                        if item.is_expired():
-                            line += f" (EXPIRED: {item.expiration_date})"
-                        else:
-                            line += f" (expires: {item.expiration_date})"
-                    item_lines.append(line)
-                result_text = f"Inventory contains {len(items)} item(s):\n" + "\n".join(item_lines)
-
-            return {"content": [{"type": "text", "text": result_text}]}
-        except Exception as e:
-            logger.error(f"Error getting inventory: {e}")
-            return {"content": [{"type": "text", "text": f"Error getting inventory: {e}"}], "is_error": True}
-
-    @tool("remove_item", "Remove an item from inventory by product name", {"product_name": str})
-    async def remove_item(args: dict[str, Any]) -> dict[str, Any]:
-        """Remove item from inventory by product name."""
-        try:
-            product_name = args.get("product_name", "")
-            if not product_name:
-                return {"content": [{"type": "text", "text": "Error: Product name is required"}], "is_error": True}
-
-            # Find matching items
-            matching_items = inventory.get_items_by_name(product_name)
-
-            if not matching_items:
-                broadcast({
-                    "type": "tool_error",
-                    "tool_name": "remove_item",
-                    "message": f"No items found matching '{product_name}'",
-                    "timestamp": time.time(),
-                })
-                return {"content": [{"type": "text", "text": f"No items found matching '{product_name}'"}], "is_error": True}
-
-            # Remove the first matching item
-            removed = inventory.remove_item(matching_items[0].id)
-
-            if removed:
-                # Broadcast removal
-                broadcast({
-                    "type": "tool_result",
-                    "tool_name": "remove_item",
-                    "status": "success",
-                    "product_name": matching_items[0].product_name,
-                    "message": f"Removed {matching_items[0].product_name} from inventory",
-                    "timestamp": time.time(),
-                })
-
-                # Broadcast inventory update
-                all_items = inventory.get_all_items()
-                broadcast({
+            broadcast(
+                {
                     "type": "inventory_update",
                     "items": [
                         {
@@ -360,15 +318,182 @@ def create_chef_tools(
                         for it in all_items
                     ],
                     "timestamp": time.time(),
-                })
+                }
+            )
 
-                return {"content": [{"type": "text", "text": f"Successfully removed '{matching_items[0].product_name}' from inventory."}]}
+            # Return MCP-formatted response
+            result_text = f"Successfully added '{item.product_name}' to inventory."
+            if item.expiration_date:
+                result_text += f" Expiration date: {item.expiration_date}."
+            return {"content": [{"type": "text", "text": result_text}]}
+
+        except Exception as e:
+            logger.error(f"Error scanning food item: {e}")
+            broadcast(
+                {
+                    "type": "tool_error",
+                    "tool_name": "scan_food_item",
+                    "message": str(e),
+                    "timestamp": time.time(),
+                }
+            )
+            return {
+                "content": [{"type": "text", "text": f"Error scanning food item: {e}"}],
+                "is_error": True,
+            }
+
+    @tool("get_inventory", "Retrieve all items in the food inventory", {})
+    async def get_inventory(args: dict[str, Any]) -> dict[str, Any]:
+        """Get all items in inventory."""
+        try:
+            # Robot shows it's thinking/checking
+            trigger_movement("thinking")
+
+            items = inventory.get_all_items()
+
+            # Broadcast inventory query
+            broadcast(
+                {
+                    "type": "tool_result",
+                    "tool_name": "get_inventory",
+                    "status": "success",
+                    "message": f"Retrieved {len(items)} items from inventory",
+                    "timestamp": time.time(),
+                }
+            )
+
+            # Build human-readable response for Claude
+            if not items:
+                result_text = "The inventory is empty. No items have been added yet."
             else:
-                return {"content": [{"type": "text", "text": "Failed to remove item from inventory."}], "is_error": True}
+                item_lines = []
+                has_expired = False
+                for item in items:
+                    line = f"- {item.product_name}"
+                    if item.expiration_date:
+                        if item.is_expired():
+                            line += f" (EXPIRED: {item.expiration_date})"
+                            has_expired = True
+                        else:
+                            line += f" (expires: {item.expiration_date})"
+                    item_lines.append(line)
+                result_text = f"Inventory contains {len(items)} item(s):\n" + "\n".join(
+                    item_lines
+                )
+
+                # Show concern if there are expired items
+                if has_expired:
+                    trigger_movement("no_shake")
+
+            return {"content": [{"type": "text", "text": result_text}]}
+        except Exception as e:
+            logger.error(f"Error getting inventory: {e}")
+            return {
+                "content": [{"type": "text", "text": f"Error getting inventory: {e}"}],
+                "is_error": True,
+            }
+
+    @tool(
+        "remove_item",
+        "Remove an item from inventory by product name",
+        {"product_name": str},
+    )
+    async def remove_item(args: dict[str, Any]) -> dict[str, Any]:
+        """Remove item from inventory by product name."""
+        try:
+            product_name = args.get("product_name", "")
+            if not product_name:
+                return {
+                    "content": [
+                        {"type": "text", "text": "Error: Product name is required"}
+                    ],
+                    "is_error": True,
+                }
+
+            # Find matching items
+            matching_items = inventory.get_items_by_name(product_name)
+
+            if not matching_items:
+                broadcast(
+                    {
+                        "type": "tool_error",
+                        "tool_name": "remove_item",
+                        "message": f"No items found matching '{product_name}'",
+                        "timestamp": time.time(),
+                    }
+                )
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"No items found matching '{product_name}'",
+                        }
+                    ],
+                    "is_error": True,
+                }
+
+            # Remove the first matching item
+            removed = inventory.remove_item(matching_items[0].id)
+
+            if removed:
+                # Robot nods in confirmation
+                trigger_movement("nod")
+
+                # Broadcast removal
+                broadcast(
+                    {
+                        "type": "tool_result",
+                        "tool_name": "remove_item",
+                        "status": "success",
+                        "product_name": matching_items[0].product_name,
+                        "message": f"Removed {matching_items[0].product_name} from inventory",
+                        "timestamp": time.time(),
+                    }
+                )
+
+                # Broadcast inventory update
+                all_items = inventory.get_all_items()
+                broadcast(
+                    {
+                        "type": "inventory_update",
+                        "items": [
+                            {
+                                "id": it.id,
+                                "product_name": it.product_name,
+                                "expiration_date": it.expiration_date,
+                                "detected_at": it.detected_at.isoformat(),
+                            }
+                            for it in all_items
+                        ],
+                        "timestamp": time.time(),
+                    }
+                )
+
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Successfully removed '{matching_items[0].product_name}' from inventory.",
+                        }
+                    ]
+                }
+            else:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Failed to remove item from inventory.",
+                        }
+                    ],
+                    "is_error": True,
+                }
 
         except Exception as e:
             logger.error(f"Error removing item: {e}")
-            return {"content": [{"type": "text", "text": f"Error removing item: {e}"}], "is_error": True}
+            return {
+                "content": [{"type": "text", "text": f"Error removing item: {e}"}],
+                "is_error": True,
+            }
 
     @tool("clear_inventory", "Clear all items from inventory", {})
     async def clear_inventory(args: dict[str, Any]) -> dict[str, Any]:
@@ -376,25 +501,42 @@ def create_chef_tools(
         try:
             inventory.clear()
 
+            # Robot nods to confirm clearing
+            trigger_movement("nod")
+
             # Broadcast clear
-            broadcast({
-                "type": "tool_result",
-                "tool_name": "clear_inventory",
-                "status": "success",
-                "message": "Inventory cleared",
-                "timestamp": time.time(),
-            })
+            broadcast(
+                {
+                    "type": "tool_result",
+                    "tool_name": "clear_inventory",
+                    "status": "success",
+                    "message": "Inventory cleared",
+                    "timestamp": time.time(),
+                }
+            )
 
             # Broadcast empty inventory
-            broadcast({
-                "type": "inventory_update",
-                "items": [],
-                "timestamp": time.time(),
-            })
+            broadcast(
+                {
+                    "type": "inventory_update",
+                    "items": [],
+                    "timestamp": time.time(),
+                }
+            )
 
-            return {"content": [{"type": "text", "text": "Inventory has been cleared. All items have been removed."}]}
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Inventory has been cleared. All items have been removed.",
+                    }
+                ]
+            }
         except Exception as e:
             logger.error(f"Error clearing inventory: {e}")
-            return {"content": [{"type": "text", "text": f"Error clearing inventory: {e}"}], "is_error": True}
+            return {
+                "content": [{"type": "text", "text": f"Error clearing inventory: {e}"}],
+                "is_error": True,
+            }
 
     return [scan_food_item, get_inventory, remove_item, clear_inventory]
