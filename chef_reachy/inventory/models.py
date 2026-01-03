@@ -13,10 +13,10 @@ class FoodItem:
     detected_at: datetime = field(default_factory=datetime.now)
     ocr_text: str | None = None
     confidence: float = 1.0
-    id: str | None = None
+    id: str = field(default="")
 
     def __post_init__(self):
-        if self.id is None:
+        if not self.id:
             # Generate a simple ID based on timestamp
             self.id = f"item_{int(self.detected_at.timestamp())}"
 

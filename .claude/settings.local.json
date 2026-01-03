@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pyright:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run pyright:*)"
+    ]
+  }
+}

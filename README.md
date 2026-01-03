@@ -5,222 +5,245 @@ colorFrom: red
 colorTo: blue
 sdk: static
 pinned: false
-short_description: Food detection using OWL-ViT object detection on Reachy Mini
+short_description: Voice-activated food inventory assistant with Claude Agent SDK
 tags:
  - reachy_mini
  - reachy_mini_python_app
- - computer_vision
- - object_detection
- - food_detection
+ - voice_assistant
+ - claude_agent
+ - food_inventory
 ---
 
 # Chef Reachy
 
-A Reachy Mini application that uses OWL-ViT (Open-World Localization with Vision Transformer) for zero-shot object detection to detect hands holding food and automatically track them with the robot's cameras.
+A voice-activated food inventory assistant for Reachy Mini using **Claude Agent SDK**, **local Whisper**, and **Claude Vision API**.
 
 ## Features
 
-- **Continuous food detection** - automatically detects hands holding food every 2.5 seconds
-- **Zero-shot detection** using OWL-ViT (google/owlvit-base-patch32) - no training required
-- **Automatic camera tracking** - cameras follow the detected hand with food using `look_at_image()` API
-- **OCR text detection** - reads product packaging text using EasyOCR
-- **LLM-powered extraction** - extracts product name and expiration date using Gemma 2B
-- **Inventory tracking** - maintains in-memory list of detected food items with expiration dates
-- **Real-time WebSocket streaming** - live camera feed with detection updates
-- **Bounding box visualization** - shows where hands and food are located in the frame
-- **Fully automatic operation** - no button clicks needed, just open the web interface
-- **Smooth camera movements** - robot looks at detected hand position in image
-- Device-aware model loading (CUDA or CPU)
-- Lightweight model (~600MB vs 4.5GB for SmolVLM2)
-- Fast inference (2-4 seconds on CPU)
-- **Text-to-speech announcements** - Robot speaks friendly phrases when food is detected using Kokoro-82M (82MB model)
+- **Voice activation** - Say "Claude" to start a conversation
+- **Natural conversation** - Multi-turn dialogue with stateful context
+- **Multi-angle capture** - Captures 3 different angles of food packaging
+- **Claude Vision analysis** - Extracts product name and expiration date from images
+- **Inventory management** - Tracks food items with expiration dates
+- **Local speech-to-text** - Whisper running on-device (no cloud STT costs)
+- **Text-to-speech** - Kokoro-82M for natural voice responses
+- **WebSocket streaming** - Real-time updates to web interface
+- **Persistent storage** - Saves inventory to ~/.chef_reachy/inventory.json
 
 ## Architecture
 
-Chef Reachy now includes three intelligent modules:
-
-1. **OCR Module** (`chef_reachy/ocr/`) - EasyOCR integration for reading text from packaging
-2. **LLM Module** (`chef_reachy/llm/`) - Ollama with Gemma 2B for extracting product information
-3. **Inventory Module** (`chef_reachy/inventory/`) - In-memory tracking of food items with expiration dates
-
-## Workflow
-
 ```
-Hand with food detected (OWL-ViT)
-    ↓
-Crop detected region
-    ↓
-Run OCR (EasyOCR)
-    ↓
-Extract product info (Gemma 2B LLM)
-    ↓
-Add to inventory list
-    ↓
-Announce via TTS
+Audio (Reachy mic) → Local Whisper → Wake word "Claude" → Claude Agent SDK
+                                                              ↓
+                                        [Tools: scan_food, get_inventory, remove_item]
+                                                              ↓
+                                        Camera captures → Claude Vision processes
+                                                              ↓
+                                           Inventory DB ← Response → Kokoro-82M TTS → Audio out
 ```
 
-## How It Works
+### Components
 
-1. **Automatic Initialization**: OWL-ViT model loads on startup (before server starts)
-2. **Continuous Detection Loop**: Main loop captures frames and runs detection every 2.5 seconds (matches inference time)
-3. **Zero-Shot Detection**: Uses text queries like "hand holding food" to detect hands without any training
-4. **Bounding Box Localization**: Returns precise bounding boxes showing where the hand is in the image
-5. **Camera Tracking**: When food is detected, calculates center of bounding box and uses `reachy_mini.look_at_image(x, y)` to move cameras
-6. **OCR Processing**: Crops detected region and runs EasyOCR to read text from packaging
-7. **LLM Extraction**: Uses Gemma 2B via Ollama to extract product name and expiration date from OCR text
-8. **Inventory Update**: Adds item to in-memory inventory with metadata (product name, expiration date, confidence)
-9. **WebSocket Streaming**: Broadcasts detection results (both "detected" and "no_detection" status) in real-time to web interface
-10. **Text-to-Speech**: When food detected, generates speech using Kokoro-82M and announces the item added to inventory
-11. **Live Visualization**: Web interface displays camera feed with bounding boxes and detection status automatically
+1. **Whisper STT** (`chef_reachy/audio/whisper.py`) - Local speech-to-text using faster-whisper
+2. **Claude Agent** (`chef_reachy/agent/`) - Claude Agent SDK with custom tools for inventory management
+3. **Inventory** (`chef_reachy/inventory/`) - Persistent food item tracking
+4. **Kokoro TTS** (`chef_reachy/audio/tts.py`) - Text-to-speech for voice responses
 
 ## Installation
 
-1. Clone the repository and navigate to the project directory
+### Prerequisites
 
-2. Install dependencies:
+- Python 3.12+
+- Reachy Mini robot
+- Anthropic API key (for Claude)
+
+### Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/chef_reachy.git
+cd chef_reachy
+```
+
+2. Install dependencies with uv:
 ```bash
 uv sync
-# or
-pip install -e .
 ```
 
-3. Install and setup Ollama for LLM-powered extraction:
-```bash
-# Install Ollama
-brew install ollama
-
-# Start Ollama server (in a separate terminal)
-ollama serve
-
-# Download Gemma 2B model
-ollama pull gemma:2b
-```
-
-The Gemma 2B model is lightweight (~1.6GB) and runs efficiently on M2 Macs.
-
-## Configuration
-
-Copy `.env.example` to `.env` and configure as needed:
-
+3. Set up environment variables:
 ```bash
 cp .env.example .env
+# Edit .env and add your Anthropic API key
 ```
 
-Configuration options:
-- `HF_HOME`: Directory for model cache (default: `~/.cache/huggingface`)
-- `HF_TOKEN`: Optional Hugging Face token for gated models
-- `VISION_MODEL`: Vision model to use (default: `google/owlvit-base-patch32`)
-- `VISION_DEVICE`: Device preference (`auto`, `cuda`, or `cpu`)
-- `VISION_DETECTION_THRESHOLD`: Confidence threshold (default: 0.15)
-- `VISION_JPEG_QUALITY`: JPEG quality for encoding (1-100, default: 85)
-- `FOOD_LABELS`: Comma-separated list of detection labels (defaults defined in `chef_reachy/vision/config.py`)
-- `ENABLE_TRACKING`: Enable automatic camera tracking (default: true)
-- `TRACKING_KP`: Proportional gain for tracking (default: 1.0, higher = faster response)
-- `TRACKING_UPDATE_RATE`: Update rate in seconds (default: 2.5s = ~0.4Hz, matches OWL-ViT inference time)
-- `MAX_ROTATION_DEG`: Maximum camera rotation angle (default: 30.0 degrees)
-- `TTS_MODEL`: Text-to-speech model (default: `hexgrad/Kokoro-82M`)
-- `TTS_VOICE`: Voice to use (default: `af_heart`)
-- `TTS_DEVICE`: Device for TTS (`auto`, `cuda`, or `cpu`)
-- `TTS_SAMPLE_RATE`: Audio sample rate (default: 16000Hz)
+4. Run the app:
+```bash
+uv run reachy-mini-apps run
+```
 
 ## Usage
 
-1. Run the application:
-```bash
-uv run ./chef_reachy/main.py
+### Starting a conversation
+
+1. Say **"Claude"** to activate the assistant
+2. Ask questions or give commands naturally:
+   - "What's in my inventory?"
+   - "Add this item" (then show the food packaging to the camera)
+   - "Remove the milk from inventory"
+   - "Clear the inventory"
+
+### Example conversations
+
+```
+You: "Claude, what do I have in my fridge?"
+Reachy: "You currently have 3 items: Organic Milk expiring on February 15th,
+         Greek Yogurt expiring on February 20th, and Cheddar Cheese expiring
+         on March 1st."
+
+You: "Add this item"
+Reachy: "I'll scan this item for you. Please hold it steady while I take
+         pictures from different angles."
+         [Captures 3 images]
+         "Added Organic Eggs expiring on February 25th to your inventory."
 ```
 
-2. The OWL-ViT detector and Kokoro-82M TTS will automatically initialize **before the server starts**
-   - Watch the console for initialization progress logs
-   - First run may take 20-40 seconds to download models (~680MB total)
-   - Subsequent runs load from cache (much faster)
+## Configuration
 
-3. Open the web interface at `http://0.0.0.0:8042`
-   - The web interface automatically connects via WebSocket and starts streaming
-   - **No button clicks needed** - detection runs continuously in the background
+### Whisper Model
 
-4. Hold food in your hand (or have Reachy hold food in its gripper)
+Edit `chef_reachy/main.py` to change Whisper model size:
 
-5. The system will automatically:
-   - **Continuously detect** hands holding food using OWL-ViT (every 2.5 seconds)
-   - Show **live camera feed** with bounding boxes when food is detected
-   - **Automatically track the hand** - robot cameras follow the detected hand position using `look_at_image()`
-   - **Speak friendly phrases** like "I found hand holding food" using text-to-speech
-   - Display **real-time detection status** with confidence scores and timestamps
-   - Log "No food detected" when no hand with food is visible
+```python
+whisper_config = WhisperConfig(
+    model_size="base",  # Options: tiny, base, small, medium, large
+    device="cpu",
+    compute_type="int8"  # Options: int8, float16, float32
+)
+```
 
-6. Move the hand around - the cameras will follow it automatically with live updates!
+Smaller models are faster but less accurate. Recommended:
+- **tiny** - Fastest, good for simple speech (~1GB RAM)
+- **base** - Balanced speed/accuracy (~1.5GB RAM) **[Default]**
+- **small** - Better accuracy (~2GB RAM)
 
-7. Check the console logs to see detection results in real-time
+### Claude Agent
 
-## Hardware Requirements
+Edit `chef_reachy/agent/config.py`:
 
-- **Minimum**: 8GB RAM, CPU processing
-- **Recommended**: 16GB RAM, NVIDIA GPU (CUDA)
-- **Note**: OWL-ViT is much lighter than SmolVLM2 and runs well on CPU
+```python
+@dataclass
+class AgentConfig:
+    model: str = "claude-3-5-sonnet-20241022"  # Claude model
+    max_tokens: int = 1024
+    temperature: float = 0.7
+```
 
-## Storage Requirements
+## Tools Available to Claude
 
-- ~600MB for OWL-ViT model cache
-- ~82MB for Kokoro-82M TTS model
-- ~80MB for EasyOCR model cache
-- ~1.6GB for Gemma 2B LLM model
-- ~100MB temporary space for processing
-- **Total**: ~2.5GB for all models
+The assistant has these tools:
+
+1. **scan_food_item** - Capture and analyze food packaging
+   - Takes 3 photos at different angles (3 seconds apart)
+   - Sends images to Claude Vision API
+   - Extracts product name and expiration date
+   - Adds item to inventory
+
+2. **get_inventory** - Retrieve all items
+   - Returns product names, expiration dates, and expired status
+
+3. **remove_item** - Remove item by name
+   - Removes first matching item from inventory
+
+4. **clear_inventory** - Clear all items
+   - Empties the entire inventory
 
 ## Performance
 
-**Model Loading:**
-- First load: 10-30 seconds (downloading + loading)
-- Subsequent loads: 2-5 seconds (from cache)
+- **Latency**: ~3-5 seconds per interaction
+  - Whisper transcription: ~1-2s
+  - Claude API: ~2-3s
+  - TTS: ~500ms
 
-**Inference Time:**
-- NVIDIA GPU (CUDA): 1-2 seconds per image
-- CPU: 2-4 seconds per image
+- **Memory**: ~2-3GB total
+  - Whisper base: ~1.5GB
+  - Kokoro TTS: ~100MB
+  - Application: ~500MB
 
-**Memory Usage:**
-- Model: ~1.5GB RAM
-- Peak during inference: ~2-3GB RAM
+- **Cost**: ~$5-10/month for typical use
+  - Claude API: ~$0.003 per request (text)
+  - Claude Vision: ~$0.005 per image analysis
+  - No STT costs (local Whisper)
+  - No TTS costs (local Kokoro)
 
-## API Endpoints
+## Development
 
-### WebSocket API
+### Running tests
 
-- `WS /vision/stream` - Real-time continuous detection streaming
-  - **Automatically streams detection results** every 2.5 seconds (matches inference time)
-  - **Message format when food detected**:
-    ```json
-    {
-      "status": "detected",
-      "detections": [
-        {"label": "hand holding food", "score": 0.87, "box": {"xmin": 150, "ymin": 100, "xmax": 350, "ymax": 300}}
-      ],
-      "annotated_image": "base64_encoded_jpeg_with_bounding_boxes",
-      "timestamp": "2025-12-28T10:30:15.123Z"
-    }
-    ```
-  - **Message format when no food detected**:
-    ```json
-    {
-      "status": "no_detection",
-      "detections": [],
-      "annotated_image": "base64_encoded_jpeg_without_bounding_boxes",
-      "timestamp": "2025-12-28T10:30:18.456Z"
-    }
-    ```
-  - **Connection**: Client connects on page load and receives continuous live updates
+```bash
+# Install dev dependencies
+uv sync --group dev
 
-## Why OWL-ViT over SmolVLM2?
+# Run type checking
+uv run pyright
 
-| Feature | OWL-ViT | SmolVLM2 |
-|---------|---------|----------|
-| **Task** | Object detection | Image captioning |
-| **Output** | Bounding boxes + labels | Text description |
-| **Model size** | ~600MB | ~4.5GB |
-| **Inference time (CPU)** | 2-4 seconds | 5-10 seconds |
-| **Memory usage** | ~2-3GB | ~8GB |
-| **Use case fit** | Perfect for locating food | General purpose |
+# Run linting
+uv run ruff check
+uv run ruff format
+```
+
+### Project structure
+
+```
+chef_reachy/
+├── agent/              # Claude Agent SDK integration
+│   ├── config.py       # Agent configuration
+│   └── tools.py        # Custom tools (scan, inventory, etc.)
+├── audio/              # Speech processing
+│   ├── whisper.py      # Whisper STT
+│   └── tts.py          # Kokoro TTS
+├── inventory/          # Inventory management
+│   ├── models.py       # FoodItem model
+│   └── manager.py      # InventoryManager
+├── static/             # Web UI assets
+└── main.py             # Main application
+```
+
+## Troubleshooting
+
+### "ANTHROPIC_API_KEY not set"
+
+Create a `.env` file with your API key:
+```bash
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+```
+
+### Whisper model download fails
+
+The first run downloads the Whisper model (~300MB for base). Ensure you have:
+- Internet connection
+- Sufficient disk space (~1GB)
+- Write access to `~/.cache/huggingface/`
+
+### Audio not being captured
+
+Check that:
+- Reachy's microphone is working
+- `media_backend="default"` is set in main.py
+- No other app is using the microphone
 
 ## License
 
-See LICENSE file for details.
+This project uses third-party models with their own licenses:
+
+- **Whisper** - MIT License (OpenAI)
+- **Kokoro-82M** - Apache 2.0 License
+- **Claude API** - Anthropic Terms of Service
+- **faster-whisper** - MIT License
+
+## Credits
+
+Built with:
+- [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-python)
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
+- [Reachy Mini SDK](https://github.com/pollen-robotics/reachy-mini)

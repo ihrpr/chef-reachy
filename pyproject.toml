@@ -5,26 +5,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chef_reachy"
-version = "0.2.0"
-description = "Chef Reachy - Food detection using OWL-ViT object detection"
+version = "0.3.0"
+description = "Chef Reachy - Voice-activated food inventory assistant with Claude Agent SDK"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "reachy-mini[gstreamer]>=1.2.4",
-    "transformers>=4.40.0",
-    "torch>=2.0.0",
+    "claude-agent-sdk>=0.1.0",
+    "anthropic>=0.40.0",
+    "faster-whisper>=1.0.0",
     "opencv-python>=4.8.0",
-    "huggingface-hub>=0.20.0",
     "numpy>=1.24.0",
     "python-dotenv>=1.0.0",
     "pillow>=10.0.0",
-    "scipy>=1.10.0",
     "kokoro>=0.2.8",
     "soundfile>=0.12.0",
-    "easyocr>=1.7.0",
-    "ollama>=0.4.0",
+    "torchaudio>=2.0.0",
 ]
-keywords = ["reachy-mini-app", "object-detection", "food-detection", "owl-vit"]
+keywords = ["reachy-mini-app", "voice-assistant", "food-inventory", "claude-agent", "whisper"]
 
 [project.entry-points."reachy_mini_apps"]
 chef_reachy = "chef_reachy.main:ChefReachy"

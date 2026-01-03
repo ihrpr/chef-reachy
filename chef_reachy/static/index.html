@@ -3,165 +3,461 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Chef Reachy - Food Vision</title>
+    <title>Chef Reachy</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="/static/style.css">
     <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             font-family: system-ui, -apple-system, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f5f5f5;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
-        .section {
-            background: white;
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
             padding: 20px;
-            margin: 20px 0;
+            border-bottom: 1px solid #333;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #00d9ff;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            color: #888;
+            font-size: 14px;
+        }
+
+        /* Main content */
+        main {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+            max-height: calc(100vh - 200px);
+        }
+
+        /* Left panel - Video + Status */
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+        }
+
+        .status-bar {
+            background: #16213e;
+            border: 1px solid #333;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        h2 {
-            margin-top: 0;
-            color: #333;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         .status-indicator {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-            background: #e3f2fd;
-            border-left: 4px solid #2196F3;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #666;
+            animation: pulse 2s infinite;
         }
 
-        .status-indicator.success {
-            background: #e8f5e9;
-            border-left-color: #4CAF50;
+        .status-indicator.idle {
+            background: #666;
+            animation: none;
+        }
+
+        .status-indicator.listening {
+            background: #00d9ff;
+        }
+
+        .status-indicator.processing {
+            background: #ffc107;
+        }
+
+        .status-indicator.executing {
+            background: #4caf50;
         }
 
         .status-indicator.error {
-            background: #ffebee;
+            background: #f44336;
+            animation: none;
+        }
+
+        .status-indicator.speaking {
+            background: #ff6b6b;
+            animation: speaking-pulse 0.5s ease-in-out infinite;
+        }
+
+        .status-indicator.transcribing {
+            background: #ffc107;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes speaking-pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.7);
+            }
+            50% {
+                transform: scale(1.2);
+                box-shadow: 0 0 0 8px rgba(255, 107, 107, 0);
+            }
+        }
+
+        .status-text {
+            font-size: 14px;
+            color: #ccc;
+        }
+
+        .transcription-bar {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .transcription-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #9c88ff;
+            text-transform: uppercase;
+        }
+
+        .transcription-text {
+            font-size: 16px;
+            color: #fff;
+            font-style: italic;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .video-container {
+            flex: 1;
+            background: #0f0f1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .video-placeholder {
+            color: #555;
+            text-align: center;
+        }
+
+        .video-placeholder svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        /* Right panel - Event Feed */
+        .right-panel {
+            width: 380px;
+            display: flex;
+            flex-direction: column;
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .feed-header {
+            padding: 16px;
+            border-bottom: 1px solid #333;
+            font-weight: 600;
+            color: #00d9ff;
+        }
+
+        .event-feed {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .event-item {
+            padding: 12px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            border-left: 3px solid #333;
+        }
+
+        .event-item.user-speech {
+            border-left-color: #00d9ff;
+        }
+
+        .event-item.agent-response {
+            border-left-color: #4caf50;
+        }
+
+        .event-item.tool-image {
+            border-left-color: #9c27b0;
+        }
+
+        .event-item.tool-progress {
+            border-left-color: #ffc107;
+        }
+
+        .event-item.tool-result {
+            border-left-color: #4caf50;
+        }
+
+        .event-item.tool-error {
             border-left-color: #f44336;
         }
 
-        #vision-results {
-            margin-top: 20px;
+        .event-item.status {
+            border-left-color: #666;
         }
 
-        #result-text {
-            background: #f9f9f9;
-            padding: 15px;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-            min-height: 50px;
-            font-size: 16px;
+        .event-item.streaming .event-content::after {
+            content: "▋";
+            animation: cursor-blink 1s steps(1) infinite;
+        }
+
+        @keyframes cursor-blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .event-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .event-icon {
+            font-size: 14px;
+        }
+
+        .event-time {
+            margin-left: auto;
+        }
+
+        .event-content {
+            font-size: 14px;
             line-height: 1.5;
         }
 
-        #result-timestamp {
-            color: #666;
-            font-size: 12px;
-            display: block;
-            margin-top: 10px;
-        }
-
-        /* Inventory styles */
-        .inventory-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        .inventory-item {
-            background: #f9f9f9;
-            border-left: 4px solid #4CAF50;
-            padding: 12px 16px;
-            margin: 10px 0;
+        .event-image {
+            margin-top: 8px;
             border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
+            max-width: 100%;
+            max-height: 150px;
+            object-fit: contain;
         }
 
-        .inventory-item-content {
-            flex: 1;
-        }
-
-        .inventory-item-name {
-            font-weight: 600;
-            font-size: 16px;
-            color: #333;
-            margin-bottom: 4px;
-        }
-
-        .inventory-item-details {
-            font-size: 13px;
-            color: #666;
-            margin: 2px 0;
-        }
-
-        .inventory-empty {
-            color: #999;
-            font-style: italic;
+        .feed-empty {
+            color: #555;
             text-align: center;
-            padding: 20px;
+            padding: 40px 20px;
+            font-style: italic;
+        }
+
+        /* Bottom panel - Inventory */
+        .inventory-panel {
+            background: #16213e;
+            border-top: 1px solid #333;
+            padding: 16px 20px;
+        }
+
+        .inventory-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .inventory-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #00d9ff;
         }
 
         .inventory-count {
-            background: #4CAF50;
-            color: white;
-            padding: 2px 8px;
+            background: #00d9ff;
+            color: #1a1a2e;
+            padding: 2px 10px;
             border-radius: 12px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
+        }
+
+        .inventory-grid {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .inventory-card {
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px 16px;
+            min-width: 160px;
+            flex-shrink: 0;
+        }
+
+        .inventory-card-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+
+        .inventory-card-expiry {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .inventory-card-expiry.expired {
+            color: #f44336;
+        }
+
+        .inventory-card-expiry.soon {
+            color: #ffc107;
+        }
+
+        .inventory-empty {
+            color: #555;
+            font-style: italic;
+            padding: 8px 0;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+
+        /* Connection status */
+        .connection-status {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            background: #f44336;
+            color: white;
+            display: none;
+        }
+
+        .connection-status.connected {
+            background: #4caf50;
         }
     </style>
 </head>
 
 <body>
-    <h1>Chef Reachy - Food Vision Control Panel</h1>
+    <div id="connection-status" class="connection-status">Disconnected</div>
 
-    <!-- Vision Controls Section -->
-    <div class="section" id="vision-controls">
-        <h2>Continuous Food Detection</h2>
+    <header>
+        <h1>Chef Reachy</h1>
+        <p>Voice-activated food inventory assistant - Say something to start a conversation</p>
+    </header>
 
-        <!-- Status indicator -->
-        <div id="vision-status" class="status-indicator">
-            Connecting to live stream...
+    <main>
+        <!-- Left Panel: Video + Status -->
+        <div class="left-panel">
+            <div class="status-bar">
+                <div id="status-indicator" class="status-indicator idle"></div>
+                <span id="status-text" class="status-text">Waiting for connection...</span>
+            </div>
+
+            <div class="transcription-bar">
+                <span class="transcription-label">Whisper:</span>
+                <span id="transcription-text" class="transcription-text">-</span>
+            </div>
+
+            <div class="video-container">
+                <img id="video-frame" style="display: none;" alt="Camera feed">
+                <div id="video-placeholder" class="video-placeholder">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                    </svg>
+                    <div>Camera feed will appear here</div>
+                </div>
+            </div>
         </div>
 
-        <!-- Live camera feed with bounding boxes -->
-        <div id="image-container" style="display: none; margin: 20px 0;">
-            <h3>Live Camera Feed:</h3>
-            <img id="annotated-image" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+        <!-- Right Panel: Event Feed -->
+        <div class="right-panel">
+            <div class="feed-header">Event Feed</div>
+            <div id="event-feed" class="event-feed">
+                <div class="feed-empty">Events will appear here as they happen...</div>
+            </div>
         </div>
+    </main>
 
-        <!-- Results display -->
-        <div id="vision-results">
-            <h3>Detection Status:</h3>
-            <div id="result-text">Waiting for live stream to connect...</div>
-            <small id="result-timestamp"></small>
-        </div>
-    </div>
-
-    <!-- Inventory Section -->
-    <div class="section" id="inventory-section">
-        <h2>
-            Food Inventory
+    <!-- Bottom Panel: Inventory -->
+    <div class="inventory-panel">
+        <div class="inventory-header">
+            <h2>Food Inventory</h2>
             <span id="inventory-count" class="inventory-count">0</span>
-        </h2>
-        <div id="inventory-container">
-            <ul id="inventory-list" class="inventory-list">
-                <li class="inventory-empty">No items detected yet</li>
-            </ul>
+        </div>
+        <div id="inventory-grid" class="inventory-grid">
+            <div class="inventory-empty">No items in inventory</div>
         </div>
     </div>
 
-    <script src="/static/main.js?v=13"></script>
+    <script src="/static/main.js"></script>
 </body>
 
 </html>
